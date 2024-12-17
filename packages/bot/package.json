@@ -1,8 +1,10 @@
 {
     "name": "bot",
     "version": "1.0.0",
+    "type": "module",
     "main": "config.ts",
     "dependencies": {
+        "@stellar/stellar-sdk": "^13.0.0",
         "dotenv": "^16.4.7",
         "telegraf": "^4.16.3"
     },

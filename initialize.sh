@@ -7,7 +7,9 @@ if [[ -f "./.stellar/contract-ids/account.json" ]]; then
   exit 0
 fi
 
-# TODO: Support pinned binary, but with updated version
+# Generate TypeScript bindings
+echo "Generating TypeScript bindings..."
+soroban bindings generate --output ./temp/bindings.ts --overwrite
 
 # if [[ -f "./target/bin/stellar" ]]; then
 #   echo "Using stellar binary from ./target/bin"

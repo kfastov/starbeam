@@ -1,4 +1,5 @@
-"use client"
+"use client"; 
+import React from 'react';
 
 import { useLaunchParams, biometry } from "@telegram-apps/sdk-react";
 import { useEffect, useState } from "react";
@@ -60,7 +61,6 @@ export default function Home() {
 
     initializeComponent();
   }, [launchParams]);
-
 
   if (isLoading) {
     return <div>Loading...</div>;

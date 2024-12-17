@@ -14,7 +14,7 @@
     "build:contracts": "stellar contract build",
     "deploy:account": "stellar contract deploy --wasm target/wasm32-unknown-unknown/release/account.wasm --source alice --network testnet --alias account",
     "deploy": "yarn deploy:account",
-    "bindings:account": "stellar contract bindings typescript --network testnet --contract-id CBGHASHQZIWWTJFWQOPEG5GXEJYV3XLQEQHDR4ABHZXUM5OYSS65U5T4 --output-dir packages/account --overwrite",
+    "bindings:account": "stellar contract bindings typescript --network testnet --contract-id CBGHASHQZIWWTJFWQOPEG5GXEJYV3XLQEQHDR4ABHZXUM5OYSS65U5T4 --output-dir ./temp --overwrite",
     "bindings": "yarn bindings:account",
     "lint": "yarn workspace webapp lint",
     "postinstall": "yarn build:contracts && yarn bindings"
