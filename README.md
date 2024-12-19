@@ -5,6 +5,23 @@ The goal is to create a wallet that will be tied to your Telegram account, allow
 Once completed, it will also serve as a foundation for other Stellar-based mini apps.
 Join https://t.me/starbeam_dev to stay updated.
 
+
+## Setting Up the Build Environment
+
+To start working on **StarBeam**, follow the steps below:
+
+### Step 1: Set up the Telegram Bot and App
+
+Before setting up the development environment for the **StarBeam** Stellar wallet, you'll need to configure the testing environment for the Telegram bot and app. This includes:
+
+- Creating a bot using **BotFather**.
+- Setting up a new app on Telegram.
+- Exposing your local development environment to the public using **Ngrok**.
+
+For detailed instructions on how to accomplish these steps, please go to the guide below:
+
+### [Setting up Testing Environment in Telegram](./docs/telegram-setup.md.md)
+
 ## Upcoming Features
 
 - Send and receive XLM
