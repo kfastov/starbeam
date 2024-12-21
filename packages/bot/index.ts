@@ -1,5 +1,7 @@
 import { Telegraf } from 'telegraf';
-import config from './config';
+import config from './config'; 
+import { fetchDataFromContract } from '../../temp/src/index'; 
+
 
 if (!config.BOT_TOKEN) {
   throw new Error('BOT_TOKEN must be provided!');
@@ -31,7 +33,17 @@ bot.command('webapp', (ctx: any) => {
     });
   });
 
-bot.launch()
+bot.command('fetch', async (ctx: any) => {
+    try {
+        const contractId = "CBGHASHQZIWWTJFWQOPEG5GXEJYV3XLQEQHDR4ABHZXUM5OYSS65U5T4"; // Example contract ID
+        const data = await fetchDataFromContract(contractId);
+        ctx.reply(`Fetched data: ${JSON.stringify(data)}`);
+    } catch (error: any) { // Explicitly typing error as any
+        ctx.reply(`Error fetching data: ${error.message}`);
+    }
+});
+
+bot.launch();
 console.log('Bot is running...');
 
 // Enable graceful stop
