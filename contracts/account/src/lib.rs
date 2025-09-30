@@ -204,7 +204,7 @@ impl TelegramSmartAccount {
 
         // Prevent rotation to same owner
         if current_owner == new_owner {
-            return Err(Error::InvalidAmount); // Consider adding InvalidAddress error
+            return Err(Error::InvalidAddress);
         }
 
         current_owner.require_auth();
@@ -227,28 +227,63 @@ impl TelegramSmartAccount {
             .get(&DataKey::TelegramUserId)
             .ok_or(Error::TelegramIdNotSet)
     }
+}
 
-    // Verify signature and perform an action (e.g., transfer XLM)
-    pub fn verify_and_transfer(
-        env: Env,
-        from: Address,
-        to: Address,
-        amount: i64,
-        telegram_signature: Vec<u8>,
-    ) -> Result<(), &'static str> {
-        // Retrieve the stored Telegram user ID
-        let stored_id: i64 = match env.storage().get(&symbol!("telegram_user_id")) {
-            Some(id) => id,
-            None => return Err("Telegram user ID not initialized."),
-        };
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::testutils::Address as TestAddress;
 
-        // Implement real signature verification logic here
-        if telegram_signature.len() as i64 == stored_id {
-            // Perform transfer (mock logic for now)
-            env.events().publish((from.clone(), to.clone()), amount);
-            Ok(())
-        } else {
-            Err("Invalid signature!")
-        }
+    #[test]
+    fn initialize_persists_user_id_and_owner() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+
+        let telegram_user_id: u64 = 42;
+        let init_result = client.try_initialize(&telegram_user_id, &owner);
+        assert!(init_result.is_ok());
+
+        let stored_user_id = client
+            .try_get_telegram_user_id()
+            .expect("telegram user id call should succeed")
+            .expect("telegram user id should be set");
+        assert_eq!(stored_user_id, telegram_user_id);
+
+        let stored_owner: Address = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get(&DataKey::Owner)
+                .expect("owner stored")
+        });
+        assert_eq!(stored_owner, owner);
+    }
+
+    #[test]
+    fn initialize_rejects_zero_user_id() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+
+        let result = client.try_initialize(&0u64, &owner);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn initialize_cannot_run_twice() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+
+        assert!(client.try_initialize(&123u64, &owner).is_ok());
+
+        let second = client.try_initialize(&123u64, &owner);
+        assert!(second.is_err());
     }
 }

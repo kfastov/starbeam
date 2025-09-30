@@ -41,3 +41,5 @@ Thumbs.db
 .idea/
 *.sublime-workspace
 *.sublime-project
+# Local planning
+REVIVAL_ISSUES.md
