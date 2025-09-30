@@ -1,6 +1,7 @@
 #![no_std]
+use ed25519_dalek::{Signature as DalekSignature, Verifier, VerifyingKey};
 use soroban_sdk::{
-    contract, contracterror, contractimpl, contracttype, token, Address, Bytes, Env,
+    contract, contracterror, contractimpl, contracttype, token, Address, BytesN, Env,
 };
 
 #[contracterror]
@@ -30,6 +31,9 @@ pub enum DataKey {
 
     /// Stores the last nonce of this smart account.
     LastNonce,
+
+    /// Stores the Telegram public key for ed25519 verification.
+    TelegramPublicKey,
 }
 
 #[contracttype]
@@ -39,14 +43,11 @@ pub struct SignatureVerification {
     /// Monotonically increasing nonce to prevent replay attacks
     nonce: u64,
     /// Ed25519 signature in bytes, must be exactly 64 bytes
-    signature: Bytes,
+    signature: BytesN<64>,
 }
 
 impl SignatureVerification {
     fn validate(&self) -> Result<(), Error> {
-        if self.signature.len() != 64 {
-            return Err(Error::InvalidSignature);
-        }
         if self.telegram_user_id == 0 {
             return Err(Error::InvalidTelegramId);
         }
@@ -63,7 +64,12 @@ pub struct TelegramSmartAccount;
 #[contractimpl]
 impl TelegramSmartAccount {
     /// Initialize the smart account with a Telegram user ID
-    pub fn initialize(env: Env, telegram_user_id: u64, owner: Address) -> Result<(), Error> {
+    pub fn initialize(
+        env: Env,
+        telegram_user_id: u64,
+        owner: Address,
+        telegram_public_key: BytesN<32>,
+    ) -> Result<(), Error> {
         // Validate telegram_user_id
         if telegram_user_id == 0 {
             return Err(Error::InvalidTelegramId);
@@ -85,11 +91,23 @@ impl TelegramSmartAccount {
         // Store the owner address
         env.storage().persistent().set(&DataKey::Owner, &owner);
 
+        // Store the Telegram public key
+        env.storage()
+            .persistent()
+            .set(&DataKey::TelegramPublicKey, &telegram_public_key);
+
         // Emit initialization event
         env.events()
             .publish(("initialized",), (telegram_user_id, owner));
 
         Ok(())
+    }
+
+    fn signature_payload(telegram_user_id: u64, nonce: u64) -> [u8; 16] {
+        let mut payload = [0u8; 16];
+        payload[..8].copy_from_slice(&telegram_user_id.to_be_bytes());
+        payload[8..].copy_from_slice(&nonce.to_be_bytes());
+        payload
     }
 
     /// Verify a signature from a Telegram account
@@ -122,20 +140,21 @@ impl TelegramSmartAccount {
             return Err(Error::InvalidSignature);
         }
 
-        // // Verify Ed25519 signature
-        // let message = env.crypto().sha256(
-        //     &[
-        //         &verification.telegram_user_id.to_be_bytes(),
-        //         &verification.nonce.to_be_bytes(),
-        //     ]
-        //     .concat(),
-        // );
-        // if !env
-        //     .crypto()
-        //     .ed25519_verify(&verification.signature, &message, &TELEGRAM_PUBLIC_KEY)
-        // {
-        //     return Err(Error::InvalidSignature);
-        // }
+        let stored_public_key: BytesN<32> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TelegramPublicKey)
+            .ok_or(Error::InvalidSignature)?;
+
+        let message = Self::signature_payload(verification.telegram_user_id, verification.nonce);
+
+        let verifying_key = VerifyingKey::from_bytes(&stored_public_key.to_array())
+            .map_err(|_| Error::InvalidSignature)?;
+        let signature = DalekSignature::from_bytes(&verification.signature.to_array());
+
+        verifying_key
+            .verify(&message, &signature)
+            .map_err(|_| Error::InvalidSignature)?;
 
         // Update nonce
         env.storage()
@@ -232,7 +251,36 @@ impl TelegramSmartAccount {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ed25519_dalek::Signer;
+    use ed25519_dalek::{Signature, SigningKey, VerifyingKey};
     use soroban_sdk::testutils::Address as TestAddress;
+
+    const PRIMARY_SECRET_KEY: [u8; 32] = [1u8; 32];
+    const SECONDARY_SECRET_KEY: [u8; 32] = [2u8; 32];
+
+    fn signing_key(bytes: [u8; 32]) -> SigningKey {
+        SigningKey::from_bytes(&bytes)
+    }
+
+    fn public_key(env: &Env, key: &VerifyingKey) -> BytesN<32> {
+        BytesN::from_array(env, &key.to_bytes())
+    }
+
+    fn make_signature(
+        env: &Env,
+        signer: &SigningKey,
+        telegram_user_id: u64,
+        nonce: u64,
+    ) -> SignatureVerification {
+        let payload = TelegramSmartAccount::signature_payload(telegram_user_id, nonce);
+        let signature: Signature = signer.sign(&payload);
+
+        SignatureVerification {
+            telegram_user_id,
+            nonce,
+            signature: BytesN::from_array(env, &signature.to_bytes()),
+        }
+    }
 
     #[test]
     fn initialize_persists_user_id_and_owner() {
@@ -241,9 +289,11 @@ mod tests {
         let contract_id = env.register_contract(None, TelegramSmartAccount);
         let client = TelegramSmartAccountClient::new(&env, &contract_id);
         let owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
 
         let telegram_user_id: u64 = 42;
-        let init_result = client.try_initialize(&telegram_user_id, &owner);
+        let init_result = client.try_initialize(&telegram_user_id, &owner, &pk);
         assert!(init_result.is_ok());
 
         let stored_user_id = client
@@ -268,8 +318,10 @@ mod tests {
         let contract_id = env.register_contract(None, TelegramSmartAccount);
         let client = TelegramSmartAccountClient::new(&env, &contract_id);
         let owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
 
-        let result = client.try_initialize(&0u64, &owner);
+        let result = client.try_initialize(&0u64, &owner, &pk);
         assert!(result.is_err());
     }
 
@@ -280,10 +332,106 @@ mod tests {
         let contract_id = env.register_contract(None, TelegramSmartAccount);
         let client = TelegramSmartAccountClient::new(&env, &contract_id);
         let owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
 
-        assert!(client.try_initialize(&123u64, &owner).is_ok());
+        assert!(client.try_initialize(&123u64, &owner, &pk).is_ok());
 
-        let second = client.try_initialize(&123u64, &owner);
+        let second = client.try_initialize(&123u64, &owner, &pk);
         assert!(second.is_err());
+    }
+
+    #[test]
+    fn rotate_owner_requires_valid_signature() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+        let new_owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
+
+        client
+            .try_initialize(&777u64, &owner, &pk)
+            .expect("init call should succeed")
+            .expect("init ok");
+
+        let verification = make_signature(&env, &signer, 777, 1);
+
+        match client.try_rotate_owner(&verification, &new_owner) {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => panic!("unexpected conversion error: {:?}", err),
+            Err(Ok(err)) => panic!("unexpected contract error: {:?}", err),
+            Err(Err(err)) => panic!("unexpected host error: {:?}", err),
+        }
+
+        let stored_owner: Address = env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get(&DataKey::Owner)
+                .expect("owner stored")
+        });
+        assert_eq!(stored_owner, new_owner);
+    }
+
+    #[test]
+    fn rotate_owner_rejects_replay_nonce() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+        let new_owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
+
+        client
+            .try_initialize(&888u64, &owner, &pk)
+            .expect("init call should succeed")
+            .expect("init ok");
+
+        let verification = make_signature(&env, &signer, 888, 1);
+
+        match client.try_rotate_owner(&verification, &new_owner) {
+            Ok(Ok(())) => {}
+            Ok(Err(err)) => panic!("unexpected conversion error: {:?}", err),
+            Err(Ok(err)) => panic!("unexpected contract error: {:?}", err),
+            Err(Err(err)) => panic!("unexpected host error: {:?}", err),
+        }
+
+        match client.try_rotate_owner(&verification, &owner) {
+            Ok(Ok(())) => panic!("replay should fail"),
+            Ok(Err(err)) => panic!("unexpected conversion error: {:?}", err),
+            Err(Ok(err)) => assert_eq!(err, Error::InvalidSignature),
+            Err(Err(err)) => panic!("unexpected host error: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn rotate_owner_rejects_wrong_signature() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+        let owner = <Address as TestAddress>::generate(&env);
+        let new_owner = <Address as TestAddress>::generate(&env);
+        let primary = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &primary.verifying_key());
+        let secondary = signing_key(SECONDARY_SECRET_KEY);
+
+        client
+            .try_initialize(&999u64, &owner, &pk)
+            .expect("init call should succeed")
+            .expect("init ok");
+
+        let invalid_signature = make_signature(&env, &secondary, 999, 1);
+
+        match client.try_rotate_owner(&invalid_signature, &new_owner) {
+            Ok(Ok(())) => panic!("invalid signature should fail"),
+            Ok(Err(err)) => panic!("unexpected conversion error: {:?}", err),
+            Err(Ok(err)) => assert_eq!(err, Error::InvalidSignature),
+            Err(Err(err)) => panic!("unexpected host error: {:?}", err),
+        }
     }
 }
