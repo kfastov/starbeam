@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 doctest = false
 
 [dependencies]
-soroban-sdk = { workspace = true }
+soroban-sdk = { workspace = true, features = ["alloc"] }
 ed25519-dalek = { version = "2.1.1", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
