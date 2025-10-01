@@ -54,7 +54,7 @@ export const Errors = {
 
   8: {message:"InvalidAddress"}
 }
-export type DataKey = {tag: "TelegramUserId", values: void} | {tag: "Owner", values: void} | {tag: "LastNonce", values: void} | {tag: "TelegramPublicKey", values: void};
+export type DataKey = {tag: "TelegramUserId", values: void} | {tag: "Owner", values: void} | {tag: "LastNonce", values: void} | {tag: "AccountPublicKey", values: void};
 
 
 export interface SignatureVerification {
@@ -78,7 +78,7 @@ export interface Client {
    * Construct and simulate a initialize transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
    * Initialize the smart account with a Telegram user ID
    */
-  initialize: ({telegram_user_id, owner, telegram_public_key}: {telegram_user_id: u64, owner: string, telegram_public_key: Buffer}, options?: {
+  initialize: ({telegram_user_id, owner, account_public_key}: {telegram_user_id: u64, owner: string, account_public_key: Buffer}, options?: {
     /**
      * The fee to pay for the transaction. Default: BASE_FEE
      */
@@ -157,17 +157,39 @@ export interface Client {
     simulate?: boolean;
   }) => Promise<AssembledTransaction<Result<u64>>>
 
+  /**
+   * Construct and simulate a get_last_nonce transaction. Returns an `AssembledTransaction` object which will have a `result` field containing the result of the simulation. If this transaction changes contract state, you will need to call `signAndSend()` on the returned object.
+   * Returns the last persisted nonce (0 if no transaction was signed yet).
+   */
+  get_last_nonce: (options?: {
+    /**
+     * The fee to pay for the transaction. Default: BASE_FEE
+     */
+    fee?: number;
+
+    /**
+     * The maximum amount of time to wait for the transaction to complete. Default: DEFAULT_TIMEOUT
+     */
+    timeoutInSeconds?: number;
+
+    /**
+     * Whether to automatically simulate the transaction when constructing the AssembledTransaction. Default: true
+     */
+    simulate?: boolean;
+  }) => Promise<AssembledTransaction<u64>>
+
 }
 export class Client extends ContractClient {
   constructor(public readonly options: ContractClientOptions) {
     super(
       new ContractSpec([ "AAAABAAAAAAAAAAAAAAABUVycm9yAAAAAAAACAAAAAAAAAAQSW52YWxpZFNpZ25hdHVyZQAAAAEAAAAAAAAAFFVuYXV0aG9yaXplZFRyYW5zZmVyAAAAAgAAAAAAAAAQVGVsZWdyYW1JZE5vdFNldAAAAAMAAAAAAAAAEkFscmVhZHlJbml0aWFsaXplZAAAAAAABAAAAAAAAAANSW52YWxpZEFtb3VudAAAAAAAAAUAAAAAAAAAE0luc3VmZmljaWVudEJhbGFuY2UAAAAABgAAAAAAAAARSW52YWxpZFRlbGVncmFtSWQAAAAAAAAHAAAAAAAAAA5JbnZhbGlkQWRkcmVzcwAAAAAACA==",
-        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAACEU3RvcmVzIHRoZSBhc3NvY2lhdGVkIFRlbGVncmFtIHVzZXIgSUQgKHU2NCkgZm9yIHRoaXMgc21hcnQgYWNjb3VudC4KVGhpcyBJRCBpcyB1c2VkIGZvciBzaWduYXR1cmUgdmVyaWZpY2F0aW9uIGFuZCBhY2NvdW50IGNvbnRyb2wuAAAADlRlbGVncmFtVXNlcklkAAAAAAAAAAAAd1N0b3JlcyB0aGUgb3duZXIncyBhZGRyZXNzIChBZGRyZXNzKSBvZiB0aGlzIHNtYXJ0IGFjY291bnQuClRoZSBvd25lciBoYXMgYWRtaW5pc3RyYXRpdmUgcHJpdmlsZWdlcyBhbmQgY2FuIGJlIHJvdGF0ZWQuAAAAAAVPd25lcgAAAAAAAAAAAAAsU3RvcmVzIHRoZSBsYXN0IG5vbmNlIG9mIHRoaXMgc21hcnQgYWNjb3VudC4AAAAJTGFzdE5vbmNlAAAAAAAAAAAAADhTdG9yZXMgdGhlIFRlbGVncmFtIHB1YmxpYyBrZXkgZm9yIGVkMjU1MTkgdmVyaWZpY2F0aW9uLgAAABFUZWxlZ3JhbVB1YmxpY0tleQAAAA==",
+        "AAAAAgAAAAAAAAAAAAAAB0RhdGFLZXkAAAAABAAAAAAAAACEU3RvcmVzIHRoZSBhc3NvY2lhdGVkIFRlbGVncmFtIHVzZXIgSUQgKHU2NCkgZm9yIHRoaXMgc21hcnQgYWNjb3VudC4KVGhpcyBJRCBpcyB1c2VkIGZvciBzaWduYXR1cmUgdmVyaWZpY2F0aW9uIGFuZCBhY2NvdW50IGNvbnRyb2wuAAAADlRlbGVncmFtVXNlcklkAAAAAAAAAAAAd1N0b3JlcyB0aGUgb3duZXIncyBhZGRyZXNzIChBZGRyZXNzKSBvZiB0aGlzIHNtYXJ0IGFjY291bnQuClRoZSBvd25lciBoYXMgYWRtaW5pc3RyYXRpdmUgcHJpdmlsZWdlcyBhbmQgY2FuIGJlIHJvdGF0ZWQuAAAAAAVPd25lcgAAAAAAAAAAAAAsU3RvcmVzIHRoZSBsYXN0IG5vbmNlIG9mIHRoaXMgc21hcnQgYWNjb3VudC4AAAAJTGFzdE5vbmNlAAAAAAAAAAAAADZTdG9yZXMgdGhlIHdhbGxldCBwdWJsaWMga2V5IGZvciBlZDI1NTE5IHZlcmlmaWNhdGlvbi4AAAAAABBBY2NvdW50UHVibGljS2V5",
         "AAAAAQAAAAAAAAAAAAAAFVNpZ25hdHVyZVZlcmlmaWNhdGlvbgAAAAAAAAMAAAA4TW9ub3RvbmljYWxseSBpbmNyZWFzaW5nIG5vbmNlIHRvIHByZXZlbnQgcmVwbGF5IGF0dGFja3MAAAAFbm9uY2UAAAAAAAAGAAAANEVkMjU1MTkgc2lnbmF0dXJlIGluIGJ5dGVzLCBtdXN0IGJlIGV4YWN0bHkgNjQgYnl0ZXMAAAAJc2lnbmF0dXJlAAAAAAAD7gAAAEAAAAAiVGhlIFRlbGVncmFtIHVzZXIgSUQgb2YgdGhlIHNpZ25lcgAAAAAAEHRlbGVncmFtX3VzZXJfaWQAAAAG",
-        "AAAAAAAAADRJbml0aWFsaXplIHRoZSBzbWFydCBhY2NvdW50IHdpdGggYSBUZWxlZ3JhbSB1c2VyIElEAAAACmluaXRpYWxpemUAAAAAAAMAAAAAAAAAEHRlbGVncmFtX3VzZXJfaWQAAAAGAAAAAAAAAAVvd25lcgAAAAAAABMAAAAAAAAAE3RlbGVncmFtX3B1YmxpY19rZXkAAAAD7gAAACAAAAABAAAD6QAAA+0AAAAAAAAAAw==",
+        "AAAAAAAAADRJbml0aWFsaXplIHRoZSBzbWFydCBhY2NvdW50IHdpdGggYSBUZWxlZ3JhbSB1c2VyIElEAAAACmluaXRpYWxpemUAAAAAAAMAAAAAAAAAEHRlbGVncmFtX3VzZXJfaWQAAAAGAAAAAAAAAAVvd25lcgAAAAAAABMAAAAAAAAAEmFjY291bnRfcHVibGljX2tleQAAAAAD7gAAACAAAAABAAAD6QAAA+0AAAAAAAAAAw==",
         "AAAAAAAAAERUcmFuc2ZlciBYTE0gdG8gYW5vdGhlciBhZGRyZXNzIHdpdGggVGVsZWdyYW0gc2lnbmF0dXJlIHZlcmlmaWNhdGlvbgAAAAx0cmFuc2Zlcl94bG0AAAADAAAAAAAAAAlzaWduYXR1cmUAAAAAAAfQAAAAFVNpZ25hdHVyZVZlcmlmaWNhdGlvbgAAAAAAAAAAAAALZGVzdGluYXRpb24AAAAAEwAAAAAAAAAGYW1vdW50AAAAAAALAAAAAQAAA+kAAAPtAAAAAAAAAAM=",
         "AAAAAAAAACVSb3RhdGUgdGhlIG93bmVyIG9mIHRoZSBzbWFydCBhY2NvdW50AAAAAAAADHJvdGF0ZV9vd25lcgAAAAIAAAAAAAAACXNpZ25hdHVyZQAAAAAAB9AAAAAVU2lnbmF0dXJlVmVyaWZpY2F0aW9uAAAAAAAAAAAAAAluZXdfb3duZXIAAAAAAAATAAAAAQAAA+kAAAPtAAAAAAAAAAM=",
-        "AAAAAAAAAAAAAAAUZ2V0X3RlbGVncmFtX3VzZXJfaWQAAAAAAAAAAQAAA+kAAAAGAAAAAw==" ]),
+        "AAAAAAAAAAAAAAAUZ2V0X3RlbGVncmFtX3VzZXJfaWQAAAAAAAAAAQAAA+kAAAAGAAAAAw==",
+        "AAAAAAAAAEZSZXR1cm5zIHRoZSBsYXN0IHBlcnNpc3RlZCBub25jZSAoMCBpZiBubyB0cmFuc2FjdGlvbiB3YXMgc2lnbmVkIHlldCkuAAAAAAAOZ2V0X2xhc3Rfbm9uY2UAAAAAAAAAAAABAAAABg==" ]),
       options
     )
   }
@@ -175,6 +197,7 @@ export class Client extends ContractClient {
     initialize: this.txFromJSON<Result<void>>,
         transfer_xlm: this.txFromJSON<Result<void>>,
         rotate_owner: this.txFromJSON<Result<void>>,
-        get_telegram_user_id: this.txFromJSON<Result<u64>>
+        get_telegram_user_id: this.txFromJSON<Result<u64>>,
+        get_last_nonce: this.txFromJSON<u64>
   }
 }

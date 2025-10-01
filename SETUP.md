@@ -64,3 +64,18 @@ To set up the testing environment for the Telegram bot associated with this proj
 Before proceeding with the setup, ensure you have configured the following environment variables:
 `BOT_TOKEN`: Your Telegram bot token obtained from BotFather
 `WEBAPP_URL`: The URL where your web application is hosted (e.g., your Ngrok URL during local development)
+
+## Webapp Environment Variables
+
+Create `packages/webapp/.env.local` and provide the values below so the API layer can talk to Soroban:
+
+```ini
+TELEGRAM_BOT_TOKEN=replace-with-your-bot-token
+SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
+SOROBAN_NETWORK_PASSPHRASE=Test SDF Network ; September 2015
+ACCOUNT_CONTRACT_ID=CBGHASHQZIWWTJFWQOPEG5GXEJYV3XLQEQHDR4ABHZXUM5OYSS65U5T4
+ACCOUNT_SIGNER_SECRET=S... # secret key that should own deployed accounts
+SESSION_SECRET=replace-with-random-hex-string
+```
+
+The signer secret should belong to an account funded on the target network. The same public key will be set as the initial `owner` of any smart accounts the API initializes.

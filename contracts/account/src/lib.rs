@@ -32,8 +32,8 @@ pub enum DataKey {
     /// Stores the last nonce of this smart account.
     LastNonce,
 
-    /// Stores the Telegram public key for ed25519 verification.
-    TelegramPublicKey,
+    /// Stores the wallet public key for ed25519 verification.
+    AccountPublicKey,
 }
 
 #[contracttype]
@@ -68,7 +68,7 @@ impl TelegramSmartAccount {
         env: Env,
         telegram_user_id: u64,
         owner: Address,
-        telegram_public_key: BytesN<32>,
+        account_public_key: BytesN<32>,
     ) -> Result<(), Error> {
         // Validate telegram_user_id
         if telegram_user_id == 0 {
@@ -94,7 +94,7 @@ impl TelegramSmartAccount {
         // Store the Telegram public key
         env.storage()
             .persistent()
-            .set(&DataKey::TelegramPublicKey, &telegram_public_key);
+            .set(&DataKey::AccountPublicKey, &account_public_key);
 
         // Emit initialization event
         env.events()
@@ -143,7 +143,7 @@ impl TelegramSmartAccount {
         let stored_public_key: BytesN<32> = env
             .storage()
             .persistent()
-            .get(&DataKey::TelegramPublicKey)
+            .get(&DataKey::AccountPublicKey)
             .ok_or(Error::InvalidSignature)?;
 
         let message = Self::signature_payload(verification.telegram_user_id, verification.nonce);
@@ -245,6 +245,14 @@ impl TelegramSmartAccount {
             .persistent()
             .get(&DataKey::TelegramUserId)
             .ok_or(Error::TelegramIdNotSet)
+    }
+
+    /// Returns the last persisted nonce (0 if no transaction was signed yet).
+    pub fn get_last_nonce(env: Env) -> u64 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::LastNonce)
+            .unwrap_or(0u64)
     }
 }
 
@@ -433,5 +441,42 @@ mod tests {
             Err(Ok(err)) => assert_eq!(err, Error::InvalidSignature),
             Err(Err(err)) => panic!("unexpected host error: {:?}", err),
         }
+    }
+
+    #[test]
+    fn last_nonce_reflects_successful_signature() {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register_contract(None, TelegramSmartAccount);
+        let client = TelegramSmartAccountClient::new(&env, &contract_id);
+
+        let owner = <Address as TestAddress>::generate(&env);
+        let new_owner = <Address as TestAddress>::generate(&env);
+        let signer = signing_key(PRIMARY_SECRET_KEY);
+        let pk = public_key(&env, &signer.verifying_key());
+
+        client
+            .try_initialize(&555u64, &owner, &pk)
+            .expect("init call should succeed")
+            .expect("init ok");
+
+        let nonce0 = client
+            .try_get_last_nonce()
+            .expect("call ok")
+            .expect("value");
+        assert_eq!(nonce0, 0);
+
+        let verification = make_signature(&env, &signer, 555, 1);
+
+        match client.try_rotate_owner(&verification, &new_owner) {
+            Ok(Ok(())) => {}
+            other => panic!("unexpected response: {:?}", other),
+        }
+
+        let nonce1 = client
+            .try_get_last_nonce()
+            .expect("call ok")
+            .expect("value");
+        assert_eq!(nonce1, 1);
     }
 }

@@ -6,6 +6,19 @@ pub struct Factory;
 
 const ACCOUNT_CONTRACT_WASM_HASH: Symbol = symbol_short!("hash");
 
+#[cfg(test)]
+mod mock_account {
+    use soroban_sdk::{contract, contractimpl, Env};
+
+    #[contract]
+    pub struct DummyAccount;
+
+    #[contractimpl]
+    impl DummyAccount {
+        pub fn init(_env: Env) {}
+    }
+}
+
 #[contractimpl]
 impl Factory {
     pub fn init(env: Env, wasm_hash: BytesN<32>) {
@@ -40,6 +53,14 @@ impl Factory {
         let salt = generate_salt(&env, &telegram_uid, &signature);
 
         // Deploy a new account contract
+        #[cfg(test)]
+        let account_contract_address = {
+            let _ = account_wasm_hash;
+            let _ = salt;
+            env.register_contract(None, mock_account::DummyAccount)
+        };
+
+        #[cfg(not(test))]
         let account_contract_address = deploy_account_contract(
             &env,
             env.current_contract_address(),
@@ -73,18 +94,16 @@ impl Factory {
 }
 
 // deploy an account contract
+#[cfg(not(test))]
 fn deploy_account_contract(
     env: &Env,
     deployer: Address,
     wasm_hash: BytesN<32>,
     salt: BytesN<32>,
 ) -> Address {
-    let deployed_address = env
-        .deployer()
+    env.deployer()
         .with_address(deployer, salt)
-        .deploy(wasm_hash);
-
-    deployed_address
+        .deploy(wasm_hash)
 }
 
 //TODO

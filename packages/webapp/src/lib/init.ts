@@ -20,9 +20,15 @@ export function init(debug: boolean): void {
   initSDK();
 
   // Add Eruda if needed.
-  debug && import('eruda')
-    .then((lib) => lib.default.init())
-    .catch(console.error);
+  if (debug) {
+    void import('eruda')
+      .then((lib) => {
+        lib.default.init();
+      })
+      .catch((error) => {
+        console.error('Failed to initialize eruda', error);
+      });
+  }
 
   // Check if all required components are supported.
   if (!backButton.isSupported() || !miniApp.isSupported()) {

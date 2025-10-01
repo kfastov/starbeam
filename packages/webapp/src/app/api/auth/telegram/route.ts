@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createHash, createHmac } from 'crypto';
+import { createSessionToken } from '@/lib/session';
 
 interface TelegramUser {
   id: number;
@@ -76,11 +77,15 @@ export async function POST(request: Request) {
       );
     }
 
+    const sessionToken = createSessionToken({ telegramUserId: BigInt(userData.id) });
+
     return NextResponse.json({ 
       success: true, 
-      user: userData 
+      user: userData,
+      sessionToken,
     });
   } catch (error) {
+    console.error('Telegram authentication error', error);
     return NextResponse.json(
       { error: 'Authentication failed' }, 
       { status: 500 }

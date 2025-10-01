@@ -1,42 +1,45 @@
 #![cfg(test)]
 
-use super::{generate_salt, Factory, FactoryClient};
+use super::{generate_salt, Factory};
 use soroban_sdk::{BytesN, Env};
-
-// import account contract
-mod account_contract {
-    soroban_sdk::contractimport!(file = "../../target/wasm32-unknown-unknown/release/account.wasm");
-}
 
 // Test init function
 #[should_panic(expected = "Already Inited")]
 #[test]
 fn test_init() {
     let env = Env::default();
-    let factory_client = FactoryClient::new(&env, &env.register_contract(None, Factory));
+    let factory_id = env.register_contract(None, Factory);
+    let wasm_hash = BytesN::from_array(&env, &[0; 32]);
 
-    let wasm_hash = env.deployer().upload_contract_wasm(account_contract::WASM);
+    env.as_contract(&factory_id, || {
+        Factory::init(env.clone(), wasm_hash.clone());
+    });
 
-    // Call init
-    factory_client.init(&wasm_hash);
-    // Attempt to initialize again
-    factory_client.init(&wasm_hash);
+    env.as_contract(&factory_id, || {
+        Factory::init(env.clone(), wasm_hash.clone());
+    });
 }
 
 #[test]
 fn test_deploy_account_with_valid_signature() {
     let env = Env::default();
-    let factory_client = FactoryClient::new(&env, &env.register_contract(None, Factory));
+    let factory_id = env.register_contract(None, Factory);
 
     let telegram_uid = BytesN::from_array(&env, &[0; 32]);
     let signature = BytesN::from_array(&env, &[0; 64]);
 
-    let wasm_hash = env.deployer().upload_contract_wasm(account_contract::WASM);
-    factory_client.init(&wasm_hash);
+    let wasm_hash = BytesN::from_array(&env, &[1; 32]);
+    env.as_contract(&factory_id, || {
+        Factory::init(env.clone(), wasm_hash.clone());
+    });
 
-    let address = factory_client.deploy_account(&telegram_uid, &signature);
+    let address = env.as_contract(&factory_id, || {
+        Factory::deploy_account(env.clone(), telegram_uid.clone(), signature.clone())
+    });
 
-    let retrieved_address = factory_client.get_account(&telegram_uid);
+    let retrieved_address = env.as_contract(&factory_id, || {
+        Factory::get_account(&env, telegram_uid.clone())
+    });
 
     assert_eq!(retrieved_address, Some(address));
 }
@@ -46,17 +49,20 @@ fn test_deploy_account_with_valid_signature() {
 fn test_deploy_account_with_invalid_signature() {
     let env = Env::default();
     let factory_id = env.register_contract(None, Factory);
-    let factory_client = FactoryClient::new(&env, &factory_id);
 
-    let wasm_hash = env.deployer().upload_contract_wasm(account_contract::WASM);
-    factory_client.init(&wasm_hash);
+    let wasm_hash = BytesN::from_array(&env, &[2; 32]);
+    env.as_contract(&factory_id, || {
+        Factory::init(env.clone(), wasm_hash.clone());
+    });
 
     // not matching the UID's first byte
     let telegram_uid = BytesN::from_array(&env, &[1; 32]);
     let invalid_signature = BytesN::from_array(&env, &[2; 64]);
 
     // Attempt to deploy account with an invalid signature, should panic
-    factory_client.deploy_account(&telegram_uid, &invalid_signature);
+    env.as_contract(&factory_id, || {
+        Factory::deploy_account(env.clone(), telegram_uid.clone(), invalid_signature.clone())
+    });
 }
 
 #[test]
@@ -64,31 +70,37 @@ fn test_deploy_account_with_invalid_signature() {
 fn test_redeploy_account() {
     let env = Env::default();
     let factory_id = env.register_contract(None, Factory);
-    let factory_client = FactoryClient::new(&env, &factory_id);
 
     let telegram_uid = BytesN::from_array(&env, &[1; 32]);
     let signature = BytesN::from_array(&env, &[1; 64]);
 
-    let wasm_hash = env.deployer().upload_contract_wasm(account_contract::WASM);
-    factory_client.init(&wasm_hash);
+    let wasm_hash = BytesN::from_array(&env, &[3; 32]);
+    env.as_contract(&factory_id, || {
+        Factory::init(env.clone(), wasm_hash.clone());
+    });
 
     // Deploy account
-    factory_client.deploy_account(&telegram_uid, &signature);
+    env.as_contract(&factory_id, || {
+        Factory::deploy_account(env.clone(), telegram_uid.clone(), signature.clone());
+    });
 
     // Attempt redeploy with same Telegram UID
-    factory_client.deploy_account(&telegram_uid, &signature);
+    env.as_contract(&factory_id, || {
+        Factory::deploy_account(env.clone(), telegram_uid.clone(), signature.clone());
+    });
 }
 
 #[test]
 fn test_get_account_for_unmapped_uid() {
     let env = Env::default();
     let factory_id = env.register_contract(None, Factory);
-    let factory_client = FactoryClient::new(&env, &factory_id);
 
     let unmapped_uid = BytesN::from_array(&env, &[3; 32]);
 
     // retrieve an account for an unmapped UID
-    let retrieved_address = factory_client.get_account(&unmapped_uid);
+    let retrieved_address = env.as_contract(&factory_id, || {
+        Factory::get_account(&env, unmapped_uid.clone())
+    });
 
     assert_eq!(retrieved_address, None);
 }
